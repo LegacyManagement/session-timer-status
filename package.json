@@ -1,16 +1,27 @@
 {
   "name": "session-timer-status",
   "displayName": "Session Timer Status",
-  "description": "Shows ~/.session-timer minutes_left/preserve in the status bar.",
+  "description": "Shows ~/.session-timer minutes_left in the status bar.",
   "version": "0.0.1",
-  "publisher": "yourname",
+  "publisher": "David Parsley",
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": ["Other"],
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
-  "contributes": {},
+  "contributes": {
+    "configuration": {
+      "title": "Session Timer Status",
+      "properties": {
+        "sessionTimerStatus.filePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the session timer JSON file. If empty, uses ~/.session-timer."
+        }
+      }
+    }
+  },
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
@@ -20,6 +31,6 @@
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.90.0",
     "typescript": "^5.4.0",
-    "vsce": "^2.26.0"
+    "@vscode/vsce": "^3.0.0"
   }
 }
