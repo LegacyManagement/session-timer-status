@@ -1,0 +1,37 @@
+name: Create Release with VSIX
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile extension
+        run: npm run compile
+
+      - name: Package VSCode extension (VSIX)
+        run: npx --yes @vscode/vsce package
+
+      - name: Create GitHub release and upload VSIX
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.vsix"
