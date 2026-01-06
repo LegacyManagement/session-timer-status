@@ -3,7 +3,6 @@
   "displayName": "Session Timer Status",
   "description": "Shows ~/.session-timer minutes_left in the status bar.",
   "version": "0.0.1",
-  "publisher": "David Parsley",
   "engines": {
     "vscode": "^1.90.0"
   },
