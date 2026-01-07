@@ -7,17 +7,6 @@ let statusItem: vscode.StatusBarItem | undefined;
 let pollHandle: NodeJS.Timeout | undefined;
 let watcher: FSWatcher | undefined;
 
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`;
-}
-
-function formatHHMM(totalMinutes: number): string {
-  const m = Math.max(0, Math.floor(totalMinutes));
-  const hh = Math.floor(m / 60);
-  const mm = m % 60;
-  return `${pad2(hh)}:${pad2(mm)}`;
-}
-
 function resolveFilePath(): string {
   const cfg = vscode.workspace.getConfiguration("sessionTimerStatus");
   const configured = (cfg.get<string>("filePath") ?? "").trim();
@@ -49,19 +38,22 @@ async function updateStatus(filePath: string) {
     }
 
     const mins = Math.floor(minutesLeft);
-    statusItem.tooltip = `${mins} minute(s) left`;
+    const m = Math.max(0, Math.floor(mins));
+    const hh = Math.floor(m / 60);
+    const mm = m % 60;
+    statusItem.tooltip = `${hh}h${mm}m remaining`;
 
     // Theme-aware backgrounds
     if (mins < 30) {
-      statusItem.text = `$(warning) ${formatHHMM(mins)}`;
+      statusItem.text = `$(warning) ${hh}h${mm}m`;
       statusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
       statusItem.color = undefined;
     } else if (mins < 60) {
-      statusItem.text = `$(clockface) ${formatHHMM(mins)}`;
+      statusItem.text = `$(clockface) ${hh}h${mm}m`;
       statusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
       statusItem.color = undefined;
     } else {
-      statusItem.text = `$(clockface) ${formatHHMM(mins)}`;
+      statusItem.text = `$(clockface) ${hh}h${mm}m`;
       statusItem.backgroundColor = undefined;
       statusItem.color = undefined;
     }
