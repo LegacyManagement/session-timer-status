@@ -6,6 +6,70 @@ import { promises as fsPromises, watch as fsWatch, FSWatcher } from "fs";
 let statusItem: vscode.StatusBarItem | undefined;
 let pollHandle: NodeJS.Timeout | undefined;
 let watcher: FSWatcher | undefined;
+let criticalThemeActive = false;
+let previousAlertColors: Record<string, string | null> | undefined;
+
+const CRITICAL_MINUTES_THRESHOLD = 14;
+const CRITICAL_ALERT_COLORS: Record<string, string> = {
+  "editor.background": "#4d0f0f",
+  "sideBar.background": "#4d0f0f",
+  "activityBar.background": "#4d0f0f",
+  "statusBar.background": "#7a1414"
+};
+
+function hasOwn(obj: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function sameColorMap(a: Record<string, string>, b: Record<string, string>): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((k) => b[k] === a[k]);
+}
+
+async function applyCriticalThemeAlert() {
+  if (criticalThemeActive) return;
+
+  const workbenchCfg = vscode.workspace.getConfiguration("workbench");
+  const current = (workbenchCfg.get<Record<string, string>>("colorCustomizations") ?? {});
+
+  previousAlertColors = {};
+  for (const key of Object.keys(CRITICAL_ALERT_COLORS)) {
+    previousAlertColors[key] = hasOwn(current, key) ? current[key] : null;
+  }
+
+  const next = { ...current, ...CRITICAL_ALERT_COLORS };
+  if (!sameColorMap(current, next)) {
+    await workbenchCfg.update("colorCustomizations", next, vscode.ConfigurationTarget.Global);
+  }
+
+  criticalThemeActive = true;
+}
+
+async function clearCriticalThemeAlert() {
+  if (!criticalThemeActive || !previousAlertColors) return;
+
+  const workbenchCfg = vscode.workspace.getConfiguration("workbench");
+  const current = (workbenchCfg.get<Record<string, string>>("colorCustomizations") ?? {});
+  const next = { ...current };
+
+  for (const key of Object.keys(CRITICAL_ALERT_COLORS)) {
+    const previous = previousAlertColors[key];
+    if (previous === null) {
+      delete next[key];
+    } else {
+      next[key] = previous;
+    }
+  }
+
+  if (!sameColorMap(current, next)) {
+    await workbenchCfg.update("colorCustomizations", next, vscode.ConfigurationTarget.Global);
+  }
+
+  criticalThemeActive = false;
+  previousAlertColors = undefined;
+}
 
 function resolveFilePath(): string {
   const cfg = vscode.workspace.getConfiguration("sessionTimerStatus");
@@ -29,6 +93,7 @@ async function updateStatus(filePath: string) {
     if (!statusItem) return;
 
     if (preserve) {
+      await clearCriticalThemeAlert();
       statusItem.text = `$(clockface) ∞`;
       statusItem.tooltip = "Session preserved indefinitely";
       statusItem.backgroundColor = undefined;
@@ -42,6 +107,12 @@ async function updateStatus(filePath: string) {
     const hh = Math.floor(m / 60);
     const mm = m % 60;
     statusItem.tooltip = `${hh}h${mm}m remaining`;
+
+    if (mins < CRITICAL_MINUTES_THRESHOLD) {
+      await applyCriticalThemeAlert();
+    } else {
+      await clearCriticalThemeAlert();
+    }
 
     // Theme-aware backgrounds
     if (mins < 30) {
@@ -60,6 +131,7 @@ async function updateStatus(filePath: string) {
 
     statusItem.show();
   } catch {
+    await clearCriticalThemeAlert();
     // Fail silently per your requirement
   }
 }
@@ -140,6 +212,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
   if (pollHandle) clearInterval(pollHandle);
+  void clearCriticalThemeAlert();
   disposeWatcher();
   statusItem?.dispose();
 }

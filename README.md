@@ -5,6 +5,7 @@ VS Code extension that reads ~/.session-timer once per minute and shows `$(clock
 Color rules:
 - < 60 minutes: warning background
 - < 30 minutes: error background
+- < 14 minutes: temporary critical workbench background override (restored automatically when time is extended)
 
 Fails silently if file is missing or malformed.
 
