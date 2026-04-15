@@ -5,7 +5,11 @@ VS Code extension that reads ~/.session-timer once per minute and shows `$(clock
 Color rules:
 - < 60 minutes: warning background
 - < 30 minutes: error background
-- < 14 minutes: temporary critical workbench background override (restored automatically when time is extended)
+- < 14 minutes: temporary critical workbench background override plus blinking clock text (restored automatically when time is extended)
+
+Critical blink timing is configurable in [src/extension.ts](src/extension.ts) via constants:
+- `CRITICAL_BLINK_ON_MS` (default `250`)
+- `CRITICAL_BLINK_OFF_MS` (default `100`)
 
 Fails silently if file is missing or malformed.
 

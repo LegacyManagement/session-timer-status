@@ -6,10 +6,16 @@ import { promises as fsPromises, watch as fsWatch, FSWatcher } from "fs";
 let statusItem: vscode.StatusBarItem | undefined;
 let pollHandle: NodeJS.Timeout | undefined;
 let watcher: FSWatcher | undefined;
+let blinkHandle: NodeJS.Timeout | undefined;
+let blinkActive = false;
+let blinkVisible = true;
+let blinkText = "";
 let criticalThemeActive = false;
 let previousAlertColors: Record<string, string | null> | undefined;
 
 const CRITICAL_MINUTES_THRESHOLD = 14;
+const CRITICAL_BLINK_ON_MS = 250;
+const CRITICAL_BLINK_OFF_MS = 100;
 const CRITICAL_ALERT_COLORS: Record<string, string> = {
   "editor.background": "#4d0f0f",
   "sideBar.background": "#4d0f0f",
@@ -26,6 +32,50 @@ function sameColorMap(a: Record<string, string>, b: Record<string, string>): boo
   const bKeys = Object.keys(b);
   if (aKeys.length !== bKeys.length) return false;
   return aKeys.every((k) => b[k] === a[k]);
+}
+
+function scheduleBlinkStep() {
+  if (!blinkActive || !statusItem) return;
+
+  if (blinkVisible) {
+    statusItem.text = " ";
+    blinkVisible = false;
+    blinkHandle = setTimeout(scheduleBlinkStep, CRITICAL_BLINK_OFF_MS);
+  } else {
+    statusItem.text = blinkText;
+    blinkVisible = true;
+    blinkHandle = setTimeout(scheduleBlinkStep, CRITICAL_BLINK_ON_MS);
+  }
+}
+
+function startCriticalBlinking(text: string) {
+  blinkText = text;
+
+  if (blinkActive) {
+    if (blinkVisible && statusItem) {
+      statusItem.text = blinkText;
+    }
+    return;
+  }
+
+  blinkActive = true;
+  blinkVisible = true;
+  if (statusItem) statusItem.text = blinkText;
+  blinkHandle = setTimeout(scheduleBlinkStep, CRITICAL_BLINK_ON_MS);
+}
+
+function stopCriticalBlinking(stableText?: string) {
+  blinkActive = false;
+  blinkVisible = true;
+
+  if (blinkHandle) {
+    clearTimeout(blinkHandle);
+    blinkHandle = undefined;
+  }
+
+  if (statusItem && typeof stableText === "string") {
+    statusItem.text = stableText;
+  }
 }
 
 async function applyCriticalThemeAlert() {
@@ -93,8 +143,8 @@ async function updateStatus(filePath: string) {
     if (!statusItem) return;
 
     if (preserve) {
+      stopCriticalBlinking("$(clockface) ∞");
       await clearCriticalThemeAlert();
-      statusItem.text = `$(clockface) ∞`;
       statusItem.tooltip = "Session preserved indefinitely";
       statusItem.backgroundColor = undefined;
       statusItem.color = undefined;
@@ -114,23 +164,33 @@ async function updateStatus(filePath: string) {
       await clearCriticalThemeAlert();
     }
 
+    const baseText = mins < CRITICAL_MINUTES_THRESHOLD
+      ? `$(clockface) ${hh}h${mm}m`
+      : mins < 30
+        ? `$(warning) ${hh}h${mm}m`
+        : `$(clockface) ${hh}h${mm}m`;
+
+    if (mins < CRITICAL_MINUTES_THRESHOLD) {
+      startCriticalBlinking(baseText);
+    } else {
+      stopCriticalBlinking(baseText);
+    }
+
     // Theme-aware backgrounds
     if (mins < 30) {
-      statusItem.text = `$(warning) ${hh}h${mm}m`;
       statusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
       statusItem.color = undefined;
     } else if (mins < 60) {
-      statusItem.text = `$(clockface) ${hh}h${mm}m`;
       statusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
       statusItem.color = undefined;
     } else {
-      statusItem.text = `$(clockface) ${hh}h${mm}m`;
       statusItem.backgroundColor = undefined;
       statusItem.color = undefined;
     }
 
     statusItem.show();
   } catch {
+    stopCriticalBlinking();
     await clearCriticalThemeAlert();
     // Fail silently per your requirement
   }
@@ -212,6 +272,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
   if (pollHandle) clearInterval(pollHandle);
+  stopCriticalBlinking();
   void clearCriticalThemeAlert();
   disposeWatcher();
   statusItem?.dispose();
