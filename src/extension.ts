@@ -116,7 +116,9 @@ async function applyCriticalThemeAlert() {
 async function clearCriticalThemeAlert() {
   const persistedActive = getPersistedCriticalThemeActive();
   const backup = previousAlertColors ?? getPersistedAlertBackup();
-  if (!criticalThemeActive && !persistedActive) return;
+  const shouldAttemptFallbackCleanup = !backup;
+
+  if (!criticalThemeActive && !persistedActive && !shouldAttemptFallbackCleanup) return;
   if (!backup) {
     const workbenchCfg = vscode.workspace.getConfiguration("workbench");
     const current = (workbenchCfg.get<Record<string, string>>("colorCustomizations") ?? {});
