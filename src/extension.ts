@@ -11,16 +11,39 @@ let blinkActive = false;
 let blinkShowsErrorBackground = true;
 let criticalThemeActive = false;
 let previousAlertColors: Record<string, string | null> | undefined;
+let extensionContextRef: vscode.ExtensionContext | undefined;
 
 const CRITICAL_MINUTES_THRESHOLD = 14;
 const CRITICAL_BLINK_ON_MS = 250;
 const CRITICAL_BLINK_OFF_MS = 100;
+const CRITICAL_THEME_ACTIVE_STATE_KEY = "criticalThemeActive";
+const CRITICAL_THEME_BACKUP_STATE_KEY = "criticalThemeBackup";
 const CRITICAL_ALERT_COLORS: Record<string, string> = {
   "editor.background": "#4d0f0f",
   "sideBar.background": "#4d0f0f",
   "activityBar.background": "#4d0f0f",
   "statusBar.background": "#7a1414"
 };
+
+function getPersistedCriticalThemeActive(): boolean {
+  return extensionContextRef?.globalState.get<boolean>(CRITICAL_THEME_ACTIVE_STATE_KEY) ?? false;
+}
+
+function getPersistedAlertBackup(): Record<string, string | null> | undefined {
+  return extensionContextRef?.globalState.get<Record<string, string | null>>(CRITICAL_THEME_BACKUP_STATE_KEY);
+}
+
+async function setPersistedCriticalThemeState(
+  active: boolean,
+  backup?: Record<string, string | null>
+) {
+  if (!extensionContextRef) return;
+  await extensionContextRef.globalState.update(CRITICAL_THEME_ACTIVE_STATE_KEY, active);
+  await extensionContextRef.globalState.update(
+    CRITICAL_THEME_BACKUP_STATE_KEY,
+    active ? (backup ?? null) : null
+  );
+}
 
 function hasOwn(obj: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
@@ -87,17 +110,43 @@ async function applyCriticalThemeAlert() {
   }
 
   criticalThemeActive = true;
+  await setPersistedCriticalThemeState(true, previousAlertColors);
 }
 
 async function clearCriticalThemeAlert() {
-  if (!criticalThemeActive || !previousAlertColors) return;
+  const persistedActive = getPersistedCriticalThemeActive();
+  const backup = previousAlertColors ?? getPersistedAlertBackup();
+  if (!criticalThemeActive && !persistedActive) return;
+  if (!backup) {
+    const workbenchCfg = vscode.workspace.getConfiguration("workbench");
+    const current = (workbenchCfg.get<Record<string, string>>("colorCustomizations") ?? {});
+    const next = { ...current };
+    let changed = false;
+
+    // Fallback for older versions: remove only keys that still match our exact alert colors.
+    for (const key of Object.keys(CRITICAL_ALERT_COLORS)) {
+      if (current[key] === CRITICAL_ALERT_COLORS[key]) {
+        delete next[key];
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await workbenchCfg.update("colorCustomizations", next, vscode.ConfigurationTarget.Global);
+    }
+
+    criticalThemeActive = false;
+    previousAlertColors = undefined;
+    await setPersistedCriticalThemeState(false);
+    return;
+  }
 
   const workbenchCfg = vscode.workspace.getConfiguration("workbench");
   const current = (workbenchCfg.get<Record<string, string>>("colorCustomizations") ?? {});
   const next = { ...current };
 
   for (const key of Object.keys(CRITICAL_ALERT_COLORS)) {
-    const previous = previousAlertColors[key];
+    const previous = backup[key];
     if (previous === null) {
       delete next[key];
     } else {
@@ -111,6 +160,7 @@ async function clearCriticalThemeAlert() {
 
   criticalThemeActive = false;
   previousAlertColors = undefined;
+  await setPersistedCriticalThemeState(false);
 }
 
 function resolveFilePath(): string {
@@ -255,10 +305,14 @@ function startFsWatch(filePath: string) {
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  extensionContextRef = context;
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusItem.name = "Session Timer";
   statusItem.hide();
   context.subscriptions.push(statusItem);
+
+  // Recover from interrupted sessions so alert colors are not left behind.
+  void clearCriticalThemeAlert();
 
   startWatcherAndPolling(context);
 
