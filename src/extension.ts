@@ -8,8 +8,7 @@ let pollHandle: NodeJS.Timeout | undefined;
 let watcher: FSWatcher | undefined;
 let blinkHandle: NodeJS.Timeout | undefined;
 let blinkActive = false;
-let blinkVisible = true;
-let blinkText = "";
+let blinkShowsErrorBackground = true;
 let criticalThemeActive = false;
 let previousAlertColors: Record<string, string | null> | undefined;
 
@@ -37,44 +36,37 @@ function sameColorMap(a: Record<string, string>, b: Record<string, string>): boo
 function scheduleBlinkStep() {
   if (!blinkActive || !statusItem) return;
 
-  if (blinkVisible) {
-    statusItem.text = " ";
-    blinkVisible = false;
+  if (blinkShowsErrorBackground) {
+    statusItem.backgroundColor = undefined;
+    blinkShowsErrorBackground = false;
     blinkHandle = setTimeout(scheduleBlinkStep, CRITICAL_BLINK_OFF_MS);
   } else {
-    statusItem.text = blinkText;
-    blinkVisible = true;
+    statusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
+    statusItem.color = undefined;
+    blinkShowsErrorBackground = true;
     blinkHandle = setTimeout(scheduleBlinkStep, CRITICAL_BLINK_ON_MS);
   }
 }
 
-function startCriticalBlinking(text: string) {
-  blinkText = text;
-
-  if (blinkActive) {
-    if (blinkVisible && statusItem) {
-      statusItem.text = blinkText;
-    }
-    return;
-  }
+function startCriticalBlinking() {
+  if (blinkActive) return;
 
   blinkActive = true;
-  blinkVisible = true;
-  if (statusItem) statusItem.text = blinkText;
+  blinkShowsErrorBackground = true;
+  if (statusItem) {
+    statusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
+    statusItem.color = undefined;
+  }
   blinkHandle = setTimeout(scheduleBlinkStep, CRITICAL_BLINK_ON_MS);
 }
 
-function stopCriticalBlinking(stableText?: string) {
+function stopCriticalBlinking() {
   blinkActive = false;
-  blinkVisible = true;
+  blinkShowsErrorBackground = true;
 
   if (blinkHandle) {
     clearTimeout(blinkHandle);
     blinkHandle = undefined;
-  }
-
-  if (statusItem && typeof stableText === "string") {
-    statusItem.text = stableText;
   }
 }
 
@@ -143,8 +135,9 @@ async function updateStatus(filePath: string) {
     if (!statusItem) return;
 
     if (preserve) {
-      stopCriticalBlinking("$(clockface) ∞");
+      stopCriticalBlinking();
       await clearCriticalThemeAlert();
+      statusItem.text = `$(clockface) ∞`;
       statusItem.tooltip = "Session preserved indefinitely";
       statusItem.backgroundColor = undefined;
       statusItem.color = undefined;
@@ -171,15 +164,19 @@ async function updateStatus(filePath: string) {
         : `$(clockface) ${hh}h${mm}m`;
 
     if (mins < CRITICAL_MINUTES_THRESHOLD) {
-      startCriticalBlinking(baseText);
+      startCriticalBlinking();
     } else {
-      stopCriticalBlinking(baseText);
+      stopCriticalBlinking();
     }
+
+    statusItem.text = baseText;
 
     // Theme-aware backgrounds
     if (mins < 30) {
-      statusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
-      statusItem.color = undefined;
+      if (!blinkActive) {
+        statusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
+        statusItem.color = undefined;
+      }
     } else if (mins < 60) {
       statusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
       statusItem.color = undefined;
